@@ -1,0 +1,6 @@
+{
+  "name": "Cyberpunk Crawler",
+  "description": "A retro terminal-based cyberpunk dungeon crawler RPG featuring turn-based combat, hacking minigames, dynamic weather, and procedural grid maps.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
