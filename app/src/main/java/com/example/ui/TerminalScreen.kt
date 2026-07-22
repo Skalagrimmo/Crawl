@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlin.math.sin
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -1260,7 +1261,7 @@ fun ShopOverlay(stats: PlayerStats, viewModel: GameViewModel, isLandscape: Boole
 }
 
 
-// --- Cyberpunk 2D Level Graphical Map Engine Canvas ---
+// --- Cyberpunk Pseudo-3D Isometric Level Map Canvas Engine ---
 @Composable
 fun Cyber2DMapCanvas(
     worldState: WorldState,
@@ -1297,155 +1298,196 @@ fun Cyber2DMapCanvas(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val gridW = worldState.width
             val gridH = worldState.height
-            val tileSize = minOf(size.width / gridW, size.height / gridH)
-            val offsetX = (size.width - gridW * tileSize) / 2f
-            val offsetY = (size.height - gridH * tileSize) / 2f
 
-            // 1. Background Grid Lines
-            val bgRows = (size.height / 20f).toInt()
-            val bgCols = (size.width / 20f).toInt()
+            // Calculate isometric tile dimensions (2:1 classic perspective)
+            val maxIsoSpan = gridW + gridH
+            val isoTileW = (size.width / (maxIsoSpan * 0.55f)).coerceIn(32f, 60f)
+            val isoTileH = isoTileW * 0.5f
+            val wallHeight = isoTileH * 2.2f
+
+            // Center camera around screen center with isometric offset tracking player
+            val centerX = size.width / 2f
+            val centerY = size.height / 2f
+
+            // Iso center offset so grid fits comfortably in view
+            val playerIsoX = (worldState.playerX - worldState.playerY) * (isoTileW / 2f)
+            val playerIsoY = (worldState.playerX + worldState.playerY) * (isoTileH / 2f)
+            
+            val camOffsetX = centerX - playerIsoX
+            val camOffsetY = centerY - playerIsoY + isoTileH * 1.5f
+
+            // 1. Cyber Background Digital Grid
+            val bgRows = (size.height / 24f).toInt()
+            val bgCols = (size.width / 24f).toInt()
             for (r in 0..bgRows) {
                 drawLine(
                     color = Color(0x0A00FFCC),
-                    start = Offset(0f, r * 20f),
-                    end = Offset(size.width, r * 20f),
+                    start = Offset(0f, r * 24f),
+                    end = Offset(size.width, r * 24f),
                     strokeWidth = 1f
                 )
             }
             for (c in 0..bgCols) {
                 drawLine(
                     color = Color(0x0A00FFCC),
-                    start = Offset(c * 20f, 0f),
-                    end = Offset(c * 20f, size.height),
+                    start = Offset(c * 24f, 0f),
+                    end = Offset(c * 24f, size.height),
                     strokeWidth = 1f
                 )
             }
 
-            // 2. Render 2D Grid Level Tiles
-            for (x in 0 until gridW) {
-                for (y in 0 until gridH) {
+            // Helper to build diamond polygon path
+            fun drawDiamond(
+                top: Offset, right: Offset, bottom: Offset, left: Offset,
+                fillColor: Color, borderColor: Color? = null, borderWidth: Float = 1f
+            ) {
+                val p = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(top.x, top.y)
+                    lineTo(right.x, right.y)
+                    lineTo(bottom.x, bottom.y)
+                    lineTo(left.x, left.y)
+                    close()
+                }
+                drawPath(path = p, color = fillColor)
+                borderColor?.let {
+                    drawPath(path = p, color = it, style = Stroke(width = borderWidth))
+                }
+            }
+
+            // Helper to draw quad face
+            fun drawQuad(
+                p1: Offset, p2: Offset, p3: Offset, p4: Offset,
+                fillColor: Color, borderColor: Color? = null, borderWidth: Float = 1f
+            ) {
+                val p = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(p1.x, p1.y)
+                    lineTo(p2.x, p2.y)
+                    lineTo(p3.x, p3.y)
+                    lineTo(p4.x, p4.y)
+                    close()
+                }
+                drawPath(path = p, color = fillColor)
+                borderColor?.let {
+                    drawPath(path = p, color = it, style = Stroke(width = borderWidth))
+                }
+            }
+
+            // 2. PAINTER'S ALGORITHM ORDER: Render level tiles back-to-front (sum = x + y)
+            for (sum in 0 until (gridW + gridH - 1)) {
+                for (x in 0..sum) {
+                    val y = sum - x
+                    if (x < 0 || x >= gridW || y < 0 || y >= gridH) continue
+
                     val pos = Pair(x, y)
                     val isExplored = worldState.explored.contains(pos)
-                    val tileLeft = offsetX + x * tileSize
-                    val tileTop = offsetY + y * tileSize
+
+                    // Base tile origin in isometric space
+                    val bx = camOffsetX + (x - y) * (isoTileW / 2f)
+                    val by = camOffsetY + (x + y) * (isoTileH / 2f)
+
+                    // Diamond floor vertices
+                    val pTop = Offset(bx, by - isoTileH / 2f)
+                    val pRight = Offset(bx + isoTileW / 2f, by)
+                    val pBottom = Offset(bx, by + isoTileH / 2f)
+                    val pLeft = Offset(bx - isoTileW / 2f, by)
+
+                    // Culling: check if tile is near screen bounds
+                    if (bx < -isoTileW * 2 || bx > size.width + isoTileW * 2 ||
+                        by < -isoTileH * 3 || by > size.height + isoTileH * 3) {
+                        continue
+                    }
 
                     if (!isExplored) {
-                        // Unexplored Fog of War Shroud
-                        drawRect(
-                            color = Color(0xFF04040A),
-                            topLeft = Offset(tileLeft, tileTop),
-                            size = androidx.compose.ui.geometry.Size(tileSize, tileSize)
-                        )
-                        drawCircle(
-                            color = Color(0x08FFFFFF),
-                            radius = 1f,
-                            center = Offset(tileLeft + tileSize / 2f, tileTop + tileSize / 2f)
-                        )
+                        // Dark Unexplored Fog Diamond
+                        drawDiamond(pTop, pRight, pBottom, pLeft, Color(0xFF030308), Color(0x1000FFCC), 0.5f)
                         continue
                     }
 
                     val isWall = worldState.walls.contains(pos)
+
+                    // GTA2 / MGS Perspective Shift Vector relative to camera center
+                    val perspDx = (bx - centerX) * 0.06f
+                    val perspDy = (by - centerY) * 0.04f
+
                     if (isWall) {
-                        // --- 2D Extruded Volumetric Wall Block ---
-                        drawRect(
-                            color = Color(0xFF0D1122),
-                            topLeft = Offset(tileLeft, tileTop),
-                            size = androidx.compose.ui.geometry.Size(tileSize, tileSize)
-                        )
-                        val inset = tileSize * 0.15f
-                        drawRect(
-                            color = Color(0xFF161C36),
-                            topLeft = Offset(tileLeft + inset, tileTop + inset),
-                            size = androidx.compose.ui.geometry.Size(tileSize - inset * 2, tileSize - inset * 2)
-                        )
-                        drawRect(
-                            color = zoneThemeColor.copy(alpha = 0.4f),
-                            topLeft = Offset(tileLeft, tileTop),
-                            size = androidx.compose.ui.geometry.Size(tileSize, tileSize),
-                            style = Stroke(width = 1.5f)
-                        )
-                        drawLine(
-                            color = Color.White.copy(alpha = 0.3f),
-                            start = Offset(tileLeft, tileTop),
-                            end = Offset(tileLeft + tileSize, tileTop),
-                            strokeWidth = 2f
-                        )
-                        drawLine(
-                            color = Color.White.copy(alpha = 0.3f),
-                            start = Offset(tileLeft, tileTop),
-                            end = Offset(tileLeft, tileTop + tileSize),
-                            strokeWidth = 2f
-                        )
+                        // --- MGS-LIKE PSEUDO-3D EXTRUDED WALL BLOCK ---
+                        // Roof Top Diamond elevated along -Y with GTA2 perspective offset
+                        val rTop = Offset(pTop.x + perspDx, pTop.y - wallHeight + perspDy)
+                        val rRight = Offset(pRight.x + perspDx, pRight.y - wallHeight + perspDy)
+                        val rBottom = Offset(pBottom.x + perspDx, pBottom.y - wallHeight + perspDy)
+                        val rLeft = Offset(pLeft.x + perspDx, pLeft.y - wallHeight + perspDy)
+
+                        // 1. Left-Front Wall Face (Shadowed)
+                        drawQuad(pLeft, pBottom, rBottom, rLeft, Color(0xFF0F172A), zoneThemeColor.copy(alpha = 0.3f), 1f)
+                        
+                        // 2. Right-Front Wall Face (Lit)
+                        drawQuad(pBottom, pRight, rRight, rBottom, Color(0xFF1E293B), zoneThemeColor.copy(alpha = 0.3f), 1f)
+
+                        // 3. Top Roof Face with MGS Tactical Circuit Finish
+                        drawDiamond(rTop, rRight, rBottom, rLeft, Color(0xFF0D1B2A), zoneThemeColor.copy(alpha = 0.6f), 1.5f)
+                        
+                        // Roof Inner Inset Pattern
+                        val inTop = Offset(rTop.x, rTop.y + isoTileH * 0.15f)
+                        val inRight = Offset(rRight.x - isoTileW * 0.15f, rRight.y)
+                        val inBottom = Offset(rBottom.x, rBottom.y - isoTileH * 0.15f)
+                        val inLeft = Offset(rLeft.x + isoTileW * 0.15f, rLeft.y)
+                        drawDiamond(inTop, inRight, inBottom, inLeft, Color(0xFF1B263B), zoneThemeColor.copy(alpha = 0.4f), 1f)
+
+                        // Vertical Edge Bevel Highlights
+                        drawLine(Color.White.copy(alpha = 0.35f), pBottom, rBottom, strokeWidth = 2f)
+                        drawLine(zoneThemeColor, rLeft, rBottom, strokeWidth = 1.5f)
+                        drawLine(zoneThemeColor, rBottom, rRight, strokeWidth = 1.5f)
+
                     } else {
-                        // --- 2D Metallic Floor Tile ---
-                        drawRect(
-                            color = Color(0xFF080A12),
-                            topLeft = Offset(tileLeft, tileTop),
-                            size = androidx.compose.ui.geometry.Size(tileSize, tileSize)
-                        )
-                        drawRect(
-                            color = Color(0xFF161A30),
-                            topLeft = Offset(tileLeft, tileTop),
-                            size = androidx.compose.ui.geometry.Size(tileSize, tileSize),
-                            style = Stroke(width = 0.8f)
-                        )
+                        // --- PSEUDOISOMETRIC METALLIC FLOOR TILE WITH PERSPECTIVE ---
+                        drawDiamond(pTop, pRight, pBottom, pLeft, Color(0xFF080C16), Color(0xFF1E293B), 1f)
+                        
+                        // Grid Floor Node Accent
                         drawCircle(
-                            color = zoneThemeColor.copy(alpha = 0.15f),
-                            radius = tileSize * 0.08f,
-                            center = Offset(tileLeft + tileSize / 2f, tileTop + tileSize / 2f)
+                            color = zoneThemeColor.copy(alpha = 0.2f),
+                            radius = isoTileW * 0.08f,
+                            center = Offset(bx, by)
                         )
 
-                        // A) Elevator / Exit Portal
+                        // A) Elevator / Exit Portal (3D Cylindrical Beam)
                         if (pos == worldState.exitPosition) {
-                            val center = Offset(tileLeft + tileSize / 2f, tileTop + tileSize / 2f)
-                            drawCircle(
-                                color = CyberSecondary.copy(alpha = 0.25f * pulseAnim),
-                                radius = tileSize * 0.45f,
-                                center = center
-                            )
-                            drawCircle(
-                                color = CyberSecondary,
-                                radius = tileSize * 0.35f,
-                                center = center,
-                                style = Stroke(width = 2f)
-                            )
-                            val path = androidx.compose.ui.graphics.Path().apply {
-                                moveTo(center.x, center.y - tileSize * 0.25f)
-                                lineTo(center.x + tileSize * 0.2f, center.y + tileSize * 0.15f)
-                                lineTo(center.x - tileSize * 0.2f, center.y + tileSize * 0.15f)
-                                close()
-                            }
-                            drawPath(path = path, color = CyberSecondary)
+                            val beamHeight = isoTileH * 2.5f
+                            val topCenter = Offset(bx + perspDx, by - beamHeight + perspDy)
+                            
+                            // Floor Portal Ring
+                            drawCircle(CyberSecondary.copy(alpha = 0.25f * pulseAnim), isoTileW * 0.45f, Offset(bx, by))
+                            drawCircle(CyberSecondary, isoTileW * 0.35f, Offset(bx, by), style = Stroke(width = 2f))
+
+                            // Vertical Laser Energy Pillars
+                            drawLine(CyberSecondary.copy(alpha = 0.8f), Offset(bx - isoTileW * 0.25f, by), Offset(topCenter.x - isoTileW * 0.25f, topCenter.y), strokeWidth = 2f)
+                            drawLine(CyberSecondary.copy(alpha = 0.8f), Offset(bx + isoTileW * 0.25f, by), Offset(topCenter.x + isoTileW * 0.25f, topCenter.y), strokeWidth = 2f)
+
+                            // Top Holographic Elevation Ring
+                            drawCircle(CyberSecondary, isoTileW * 0.35f, topCenter, style = Stroke(width = 2f))
+                            drawCircle(CyberSecondary.copy(alpha = 0.3f), isoTileW * 0.45f, topCenter)
                         }
 
-                        // B) Doors
+                        // B) 3D Isometric Doors
                         worldState.doors[pos]?.let { door ->
-                            val center = Offset(tileLeft + tileSize / 2f, tileTop + tileSize / 2f)
+                            val doorHeight = isoTileH * 1.8f
+                            val doorTopLeft = Offset(pLeft.x + perspDx, pLeft.y - doorHeight + perspDy)
+                            val doorTopRight = Offset(pRight.x + perspDx, pRight.y - doorHeight + perspDy)
+
                             if (door.isLocked) {
-                                drawLine(
-                                    color = CyberTertiary,
-                                    start = Offset(tileLeft, center.y),
-                                    end = Offset(tileLeft + tileSize, center.y),
-                                    strokeWidth = 4f
-                                )
-                                drawCircle(
-                                    color = CyberTertiary.copy(alpha = 0.4f * pulseAnim),
-                                    radius = tileSize * 0.3f,
-                                    center = center
-                                )
+                                // Red Laser Barrier Quad
+                                drawQuad(pLeft, pRight, doorTopRight, doorTopLeft, CyberTertiary.copy(alpha = 0.4f * pulseAnim), CyberTertiary, 2f)
+                                drawLine(CyberTertiary, pLeft, doorTopLeft, strokeWidth = 3f)
+                                drawLine(CyberTertiary, pRight, doorTopRight, strokeWidth = 3f)
                             } else {
-                                drawRect(
-                                    color = CyberSecondary.copy(alpha = 0.3f),
-                                    topLeft = Offset(tileLeft + tileSize * 0.2f, tileTop + tileSize * 0.2f),
-                                    size = androidx.compose.ui.geometry.Size(tileSize * 0.6f, tileSize * 0.6f),
-                                    style = Stroke(width = 2f)
-                                )
+                                // Unlocked Cyan Frame Pillars
+                                drawLine(CyberSecondary, pLeft, doorTopLeft, strokeWidth = 2.5f)
+                                drawLine(CyberSecondary, pRight, doorTopRight, strokeWidth = 2.5f)
+                                drawLine(CyberSecondary, doorTopLeft, doorTopRight, strokeWidth = 1.5f)
                             }
                         }
 
-                        // C) Loot Items
+                        // C) Ultima-Style 3D Isometric Loot Chests & Items
                         worldState.loot[pos]?.let { lootType ->
-                            val center = Offset(tileLeft + tileSize / 2f, tileTop + tileSize / 2f)
                             val lootColor = when (lootType) {
                                 LootType.CREDITS -> Color(0xFFFFD700)
                                 LootType.MEDKIT -> CyberTertiary
@@ -1453,46 +1495,60 @@ fun Cyber2DMapCanvas(
                                 LootType.WEAPON_MOD -> CyberWarning
                                 LootType.KEYCARD -> Color(0xFFA855F7)
                             }
-                            drawCircle(
-                                color = lootColor.copy(alpha = 0.3f * pulseAnim),
-                                radius = tileSize * 0.4f,
-                                center = center
+
+                            val hoverY = sin((rotateAnim * 0.05f).toDouble()).toFloat() * 4f
+                            val chestH = isoTileH * 0.8f
+                            val lootCenter = Offset(bx + perspDx, by - chestH - hoverY + perspDy)
+
+                            // Floor Ground Shadow
+                            drawOval(
+                                color = Color.Black.copy(alpha = 0.5f),
+                                topLeft = Offset(bx - isoTileW * 0.25f, by - isoTileH * 0.15f),
+                                size = androidx.compose.ui.geometry.Size(isoTileW * 0.5f, isoTileH * 0.3f)
                             )
-                            drawCircle(
-                                color = lootColor,
-                                radius = tileSize * 0.22f,
-                                center = center
-                            )
+
+                            // Floating Hovering Crystal Diamond
+                            val cTop = Offset(lootCenter.x, lootCenter.y - isoTileH * 0.3f)
+                            val cRight = Offset(lootCenter.x + isoTileW * 0.2f, lootCenter.y)
+                            val cBottom = Offset(lootCenter.x, lootCenter.y + isoTileH * 0.3f)
+                            val cLeft = Offset(lootCenter.x - isoTileW * 0.2f, lootCenter.y)
+
+                            drawDiamond(cTop, cRight, cBottom, cLeft, lootColor, Color.White, 1.5f)
+                            drawCircle(lootColor.copy(alpha = 0.3f * pulseAnim), isoTileW * 0.35f, lootCenter)
                         }
 
-                        // D) Enemies
+                        // D) Ultima-Style Pseudoisometric Enemy Mechs
                         worldState.enemies[pos]?.let { enemy ->
-                            val center = Offset(tileLeft + tileSize / 2f, tileTop + tileSize / 2f)
-                            drawCircle(
-                                color = Color(0x60FF0055),
-                                radius = tileSize * 0.42f,
-                                center = center
+                            val mechH = isoTileH * 1.6f
+                            val enemyCenter = Offset(bx + perspDx, by - mechH + perspDy)
+
+                            // Enemy Floor Shadow
+                            drawOval(
+                                color = Color.Black.copy(alpha = 0.6f),
+                                topLeft = Offset(bx - isoTileW * 0.35f, by - isoTileH * 0.2f),
+                                size = androidx.compose.ui.geometry.Size(isoTileW * 0.7f, isoTileH * 0.4f)
                             )
-                            drawCircle(
-                                color = CyberTertiary,
-                                radius = tileSize * 0.28f,
-                                center = center
-                            )
-                            drawCircle(
-                                color = Color.White,
-                                radius = tileSize * 0.12f,
-                                center = center
-                            )
+
+                            // Mech 3D Octagonal Core
+                            val eTop = Offset(enemyCenter.x, enemyCenter.y - isoTileH * 0.4f)
+                            val eRight = Offset(enemyCenter.x + isoTileW * 0.25f, enemyCenter.y)
+                            val eBottom = Offset(enemyCenter.x, enemyCenter.y + isoTileH * 0.4f)
+                            val eLeft = Offset(enemyCenter.x - isoTileW * 0.25f, enemyCenter.y)
+
+                            drawDiamond(eTop, eRight, eBottom, eLeft, CyberTertiary, Color.White, 1.5f)
+                            
+                            // Red Ocular Scanner Sensor
+                            drawCircle(Color.Red, isoTileW * 0.12f, enemyCenter)
+                            drawCircle(Color.Yellow, isoTileW * 0.05f, enemyCenter)
+
+                            // Floating 3D HP Bar
                             val hpRatio = (enemy.hp.toFloat() / enemy.maxHp.toFloat()).coerceIn(0f, 1f)
-                            val barW = tileSize * 0.8f
-                            val barH = 3.dp.toPx()
-                            val barLeft = center.x - barW / 2f
-                            val barTop = tileTop + 2.dp.toPx()
-                            drawRect(
-                                color = Color.Black,
-                                topLeft = Offset(barLeft, barTop),
-                                size = androidx.compose.ui.geometry.Size(barW, barH)
-                            )
+                            val barW = isoTileW * 0.8f
+                            val barH = 4.dp.toPx()
+                            val barLeft = enemyCenter.x - barW / 2f
+                            val barTop = enemyCenter.y - isoTileH * 0.6f
+
+                            drawRect(Color.Black, Offset(barLeft, barTop), androidx.compose.ui.geometry.Size(barW, barH))
                             drawRect(
                                 color = if (hpRatio > 0.5f) CyberSecondary else CyberTertiary,
                                 topLeft = Offset(barLeft, barTop),
@@ -1500,63 +1556,67 @@ fun Cyber2DMapCanvas(
                             )
                         }
 
-                        // E) Player Character Hero Unit
+                        // E) Ultima-Style Pseudoisometric Hero Unit
                         if (x == worldState.playerX && y == worldState.playerY) {
-                            val center = Offset(tileLeft + tileSize / 2f, tileTop + tileSize / 2f)
-                            drawCircle(
-                                color = CyberPrimary.copy(alpha = 0.3f + 0.3f * pulseAnim),
-                                radius = tileSize * 0.48f,
-                                center = center
+                            val heroH = isoTileH * 1.9f
+                            val heroCenter = Offset(bx + perspDx, by - heroH + perspDy)
+
+                            // Hero Floor Shadow & Pulsing Stealth/Shield Ring
+                            drawOval(
+                                color = Color.Black.copy(alpha = 0.65f),
+                                topLeft = Offset(bx - isoTileW * 0.4f, by - isoTileH * 0.25f),
+                                size = androidx.compose.ui.geometry.Size(isoTileW * 0.8f, isoTileH * 0.5f)
                             )
-                            drawCircle(
-                                color = CyberPrimary,
-                                radius = tileSize * 0.32f,
-                                center = center,
-                                style = Stroke(width = 2.5f)
-                            )
-                            drawCircle(
-                                color = CyberSecondary,
-                                radius = tileSize * 0.22f,
-                                center = center
-                            )
-                            drawCircle(
-                                color = Color.White,
-                                radius = tileSize * 0.08f,
-                                center = center
-                            )
+                            drawCircle(CyberPrimary.copy(alpha = 0.3f + 0.3f * pulseAnim), isoTileW * 0.5f, Offset(bx, by), style = Stroke(width = 2f))
+
+                            // Hero Cyber-Ninja Body (Isometric Torso)
+                            val hTop = Offset(heroCenter.x, heroCenter.y - isoTileH * 0.45f)
+                            val hRight = Offset(heroCenter.x + isoTileW * 0.28f, heroCenter.y)
+                            val hBottom = Offset(heroCenter.x, heroCenter.y + isoTileH * 0.45f)
+                            val hLeft = Offset(heroCenter.x - isoTileW * 0.28f, heroCenter.y)
+
+                            drawDiamond(hTop, hRight, hBottom, hLeft, CyberPrimary, CyberSecondary, 2f)
+
+                            // Cyber Visor Head Unit
+                            drawCircle(CyberSecondary, isoTileW * 0.16f, heroCenter)
+                            drawCircle(Color.White, isoTileW * 0.07f, heroCenter)
+
+                            // Aiming Laser / Direction Blade Line
                             val dx = worldState.playerDirection.first
                             val dy = worldState.playerDirection.second
                             if (dx != 0 || dy != 0) {
-                                val tipX = center.x + dx * tileSize * 0.38f
-                                val tipY = center.y + dy * tileSize * 0.38f
-                                drawCircle(
+                                val aimIsoX = (dx - dy) * (isoTileW * 0.4f)
+                                val aimIsoY = (dx + dy) * (isoTileH * 0.4f)
+                                drawLine(
                                     color = Color.Yellow,
-                                    radius = tileSize * 0.12f,
-                                    center = Offset(tipX, tipY)
+                                    start = heroCenter,
+                                    end = Offset(heroCenter.x + aimIsoX, heroCenter.y + aimIsoY),
+                                    strokeWidth = 3f
                                 )
+                                drawCircle(Color.Yellow, 3.dp.toPx(), Offset(heroCenter.x + aimIsoX, heroCenter.y + aimIsoY))
                             }
                         }
                     }
                 }
             }
 
-            // 3. Dynamic Weather / Particle Effect Rain Streaks
+            // 3. Dynamic Perspective Weather Rain Streaks
             if (weatherState.condition == WeatherCondition.GLITCH_RAIN || weatherState.condition == WeatherCondition.DATA_STORM) {
-                val rainColor = Color(0x35CEF7FF)
-                for (i in 0..12) {
-                    val rx = ((i * 73 + (rotateAnim * 3).toInt()) % size.width.toInt()).toFloat()
-                    val ry = ((i * 41 + (rotateAnim * 6).toInt()) % size.height.toInt()).toFloat()
+                val rainColor = Color(0x40CEF7FF)
+                for (i in 0..14) {
+                    val rx = ((i * 79 + (rotateAnim * 4).toInt()) % size.width.toInt()).toFloat()
+                    val ry = ((i * 47 + (rotateAnim * 8).toInt()) % size.height.toInt()).toFloat()
                     drawLine(
                         color = rainColor,
                         start = Offset(rx, ry),
-                        end = Offset(rx - 8f, ry + 20f),
-                        strokeWidth = 1.5f
+                        end = Offset(rx - 12f, ry + 26f),
+                        strokeWidth = 1.8f
                     )
                 }
             }
         }
 
-        // Floating Micro 2D Minimap Overlay (Top-Right)
+        // Floating Micro 2D Tactical Minimap Overlay (Top-Right)
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -1568,7 +1628,7 @@ fun Cyber2DMapCanvas(
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "2D_MINIMAP",
+                    text = "3D_ISOMAP",
                     color = CyberTertiary,
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Bold,
