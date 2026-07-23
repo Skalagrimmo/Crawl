@@ -1268,6 +1268,18 @@ fun Cyber2DMapCanvas(
     weatherState: WeatherState,
     modifier: Modifier = Modifier
 ) {
+    // 1. Smooth 120ms Movement Tweening for smooth 2.5D position transitions
+    val animatedPlayerX by animateFloatAsState(
+        targetValue = worldState.playerX.toFloat(),
+        animationSpec = tween(durationMillis = 120, easing = LinearOutSlowInEasing),
+        label = "player_x"
+    )
+    val animatedPlayerY by animateFloatAsState(
+        targetValue = worldState.playerY.toFloat(),
+        animationSpec = tween(durationMillis = 120, easing = LinearOutSlowInEasing),
+        label = "player_y"
+    )
+
     val infiniteTransition = rememberInfiniteTransition(label = "map_anim")
     val pulseAnim by infiniteTransition.animateFloat(
         initialValue = 0.4f,
@@ -1294,29 +1306,40 @@ fun Cyber2DMapCanvas(
         ZoneType.CITY -> CyberSecondary
     }
 
+    // 2. Wall Occlusion Logic (Project Zomboid style: detects if player is behind a wall)
+    val playerTileX = animatedPlayerX.toInt()
+    val playerTileY = animatedPlayerY.toInt()
+    val isPlayerBehindWall = worldState.walls.any { (wx, wy) ->
+        val wallDepth = wx + wy
+        val playerDepth = playerTileX + playerTileY
+        wallDepth > playerDepth &&
+        (wallDepth - playerDepth) <= 3 &&
+        kotlin.math.abs((wx - wy) - (playerTileX - playerTileY)) <= 2
+    }
+    val heroAlpha = if (isPlayerBehindWall) 0.6f else 1.0f
+
     Box(modifier = modifier) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val gridW = worldState.width
             val gridH = worldState.height
 
-            // Calculate isometric tile dimensions (2:1 classic perspective)
+            // Base isometric tile dimensions (2:1 classic perspective)
             val maxIsoSpan = gridW + gridH
-            val isoTileW = (size.width / (maxIsoSpan * 0.55f)).coerceIn(32f, 60f)
-            val isoTileH = isoTileW * 0.5f
-            val wallHeight = isoTileH * 2.2f
+            val baseIsoTileW = (size.width / (maxIsoSpan * 0.55f)).coerceIn(32f, 60f)
+            val baseIsoTileH = baseIsoTileW * 0.5f
+            val baseWallHeight = baseIsoTileH * 2.2f
 
-            // Center camera around screen center with isometric offset tracking player
+            // Center camera smoothly around interpolated player position
             val centerX = size.width / 2f
             val centerY = size.height / 2f
 
-            // Iso center offset so grid fits comfortably in view
-            val playerIsoX = (worldState.playerX - worldState.playerY) * (isoTileW / 2f)
-            val playerIsoY = (worldState.playerX + worldState.playerY) * (isoTileH / 2f)
+            val playerIsoX = (animatedPlayerX - animatedPlayerY) * (baseIsoTileW / 2f)
+            val playerIsoY = (animatedPlayerX + animatedPlayerY) * (baseIsoTileH / 2f)
             
             val camOffsetX = centerX - playerIsoX
-            val camOffsetY = centerY - playerIsoY + isoTileH * 1.5f
+            val camOffsetY = centerY - playerIsoY + baseIsoTileH * 1.5f
 
-            // 1. Cyber Background Digital Grid
+            // Background Digital Grid Lines
             val bgRows = (size.height / 24f).toInt()
             val bgCols = (size.width / 24f).toInt()
             for (r in 0..bgRows) {
@@ -1372,8 +1395,67 @@ fun Cyber2DMapCanvas(
                 }
             }
 
-            // 2. PAINTER'S ALGORITHM ORDER: Render level tiles back-to-front (sum = x + y)
+            // Helper to render the Hero character sprite unit
+            fun drawHeroUnit(hBx: Float, hBy: Float, hIsoW: Float, hIsoH: Float, alphaFactor: Float) {
+                val heroH = hIsoH * 1.9f
+                val perspDx = (hBx - centerX) * 0.06f
+                val perspDy = (hBy - centerY) * 0.04f
+                val heroCenter = Offset(hBx + perspDx, hBy - heroH + perspDy)
+
+                // Hero Floor Shadow & Stealth/Shield Ring
+                drawOval(
+                    color = Color.Black.copy(alpha = 0.65f * alphaFactor),
+                    topLeft = Offset(hBx - hIsoW * 0.4f, hBy - hIsoH * 0.25f),
+                    size = androidx.compose.ui.geometry.Size(hIsoW * 0.8f, hIsoH * 0.5f)
+                )
+                drawCircle(
+                    color = CyberPrimary.copy(alpha = (0.3f + 0.3f * pulseAnim) * alphaFactor),
+                    radius = hIsoW * 0.5f,
+                    center = Offset(hBx, hBy),
+                    style = Stroke(width = 2f)
+                )
+
+                // Hero Cyber-Ninja Body
+                val hTop = Offset(heroCenter.x, heroCenter.y - hIsoH * 0.45f)
+                val hRight = Offset(heroCenter.x + hIsoW * 0.28f, heroCenter.y)
+                val hBottom = Offset(heroCenter.x, heroCenter.y + hIsoH * 0.45f)
+                val hLeft = Offset(heroCenter.x - hIsoW * 0.28f, heroCenter.y)
+
+                drawDiamond(hTop, hRight, hBottom, hLeft, CyberPrimary.copy(alpha = alphaFactor), CyberSecondary.copy(alpha = alphaFactor), 2f)
+
+                // Cyber Visor Head Unit
+                drawCircle(CyberSecondary.copy(alpha = alphaFactor), hIsoW * 0.16f, heroCenter)
+                drawCircle(Color.White.copy(alpha = alphaFactor), hIsoW * 0.07f, heroCenter)
+
+                // Aiming Laser / Direction Line
+                val dx = worldState.playerDirection.first
+                val dy = worldState.playerDirection.second
+                if (dx != 0 || dy != 0) {
+                    val aimIsoX = (dx - dy) * (hIsoW * 0.4f)
+                    val aimIsoY = (dx + dy) * (hIsoH * 0.4f)
+                    drawLine(
+                        color = Color.Yellow.copy(alpha = alphaFactor),
+                        start = heroCenter,
+                        end = Offset(heroCenter.x + aimIsoX, heroCenter.y + aimIsoY),
+                        strokeWidth = 3f
+                    )
+                    drawCircle(Color.Yellow.copy(alpha = alphaFactor), 3.dp.toPx(), Offset(heroCenter.x + aimIsoX, heroCenter.y + aimIsoY))
+                }
+            }
+
+            val heroBx = camOffsetX + (animatedPlayerX - animatedPlayerY) * (baseIsoTileW / 2f)
+            val heroBy = camOffsetY + (animatedPlayerX + animatedPlayerY) * (baseIsoTileH / 2f)
+            val heroDepthSum = (animatedPlayerX + animatedPlayerY).toInt()
+
+            // 3. PAINTER'S ALGORITHM ORDER with Foreshortening Perspective Scaling
             for (sum in 0 until (gridW + gridH - 1)) {
+                
+                // Draw Hero at its exact depth order in the painter pass
+                if (sum == heroDepthSum) {
+                    val heroForeshortening = (1.0f + ((heroBy - centerY) * 0.0015f)).coerceIn(0.85f, 1.25f)
+                    drawHeroUnit(heroBx, heroBy, baseIsoTileW * heroForeshortening, baseIsoTileH * heroForeshortening, heroAlpha)
+                }
+
                 for (x in 0..sum) {
                     val y = sum - x
                     if (x < 0 || x >= gridW || y < 0 || y >= gridH) continue
@@ -1382,8 +1464,14 @@ fun Cyber2DMapCanvas(
                     val isExplored = worldState.explored.contains(pos)
 
                     // Base tile origin in isometric space
-                    val bx = camOffsetX + (x - y) * (isoTileW / 2f)
-                    val by = camOffsetY + (x + y) * (isoTileH / 2f)
+                    val bx = camOffsetX + (x - y) * (baseIsoTileW / 2f)
+                    val by = camOffsetY + (x + y) * (baseIsoTileH / 2f)
+
+                    // 3. Foreshortening Camera Scale: objects further down screen are slightly larger
+                    val foreshorteningScale = (1.0f + ((by - centerY) * 0.0015f)).coerceIn(0.85f, 1.25f)
+                    val isoTileW = baseIsoTileW * foreshorteningScale
+                    val isoTileH = baseIsoTileH * foreshorteningScale
+                    val wallHeight = baseWallHeight * foreshorteningScale
 
                     // Diamond floor vertices
                     val pTop = Offset(bx, by - isoTileH / 2f)
@@ -1398,7 +1486,6 @@ fun Cyber2DMapCanvas(
                     }
 
                     if (!isExplored) {
-                        // Dark Unexplored Fog Diamond
                         drawDiamond(pTop, pRight, pBottom, pLeft, Color(0xFF030308), Color(0x1000FFCC), 0.5f)
                         continue
                     }
@@ -1411,7 +1498,6 @@ fun Cyber2DMapCanvas(
 
                     if (isWall) {
                         // --- MGS-LIKE PSEUDO-3D EXTRUDED WALL BLOCK ---
-                        // Roof Top Diamond elevated along -Y with GTA2 perspective offset
                         val rTop = Offset(pTop.x + perspDx, pTop.y - wallHeight + perspDy)
                         val rRight = Offset(pRight.x + perspDx, pRight.y - wallHeight + perspDy)
                         val rBottom = Offset(pBottom.x + perspDx, pBottom.y - wallHeight + perspDy)
@@ -1423,7 +1509,7 @@ fun Cyber2DMapCanvas(
                         // 2. Right-Front Wall Face (Lit)
                         drawQuad(pBottom, pRight, rRight, rBottom, Color(0xFF1E293B), zoneThemeColor.copy(alpha = 0.3f), 1f)
 
-                        // 3. Top Roof Face with MGS Tactical Circuit Finish
+                        // 3. Top Roof Face
                         drawDiamond(rTop, rRight, rBottom, rLeft, Color(0xFF0D1B2A), zoneThemeColor.copy(alpha = 0.6f), 1.5f)
                         
                         // Roof Inner Inset Pattern
@@ -1439,54 +1525,48 @@ fun Cyber2DMapCanvas(
                         drawLine(zoneThemeColor, rBottom, rRight, strokeWidth = 1.5f)
 
                     } else {
-                        // --- PSEUDOISOMETRIC METALLIC FLOOR TILE WITH PERSPECTIVE ---
+                        // --- PSEUDOISOMETRIC FLOOR TILE ---
                         drawDiamond(pTop, pRight, pBottom, pLeft, Color(0xFF080C16), Color(0xFF1E293B), 1f)
                         
-                        // Grid Floor Node Accent
                         drawCircle(
                             color = zoneThemeColor.copy(alpha = 0.2f),
                             radius = isoTileW * 0.08f,
                             center = Offset(bx, by)
                         )
 
-                        // A) Elevator / Exit Portal (3D Cylindrical Beam)
+                        // A) Elevator Portal
                         if (pos == worldState.exitPosition) {
                             val beamHeight = isoTileH * 2.5f
                             val topCenter = Offset(bx + perspDx, by - beamHeight + perspDy)
                             
-                            // Floor Portal Ring
                             drawCircle(CyberSecondary.copy(alpha = 0.25f * pulseAnim), isoTileW * 0.45f, Offset(bx, by))
                             drawCircle(CyberSecondary, isoTileW * 0.35f, Offset(bx, by), style = Stroke(width = 2f))
 
-                            // Vertical Laser Energy Pillars
                             drawLine(CyberSecondary.copy(alpha = 0.8f), Offset(bx - isoTileW * 0.25f, by), Offset(topCenter.x - isoTileW * 0.25f, topCenter.y), strokeWidth = 2f)
                             drawLine(CyberSecondary.copy(alpha = 0.8f), Offset(bx + isoTileW * 0.25f, by), Offset(topCenter.x + isoTileW * 0.25f, topCenter.y), strokeWidth = 2f)
 
-                            // Top Holographic Elevation Ring
                             drawCircle(CyberSecondary, isoTileW * 0.35f, topCenter, style = Stroke(width = 2f))
                             drawCircle(CyberSecondary.copy(alpha = 0.3f), isoTileW * 0.45f, topCenter)
                         }
 
-                        // B) 3D Isometric Doors
+                        // B) Doors
                         worldState.doors[pos]?.let { door ->
                             val doorHeight = isoTileH * 1.8f
                             val doorTopLeft = Offset(pLeft.x + perspDx, pLeft.y - doorHeight + perspDy)
                             val doorTopRight = Offset(pRight.x + perspDx, pRight.y - doorHeight + perspDy)
 
                             if (door.isLocked) {
-                                // Red Laser Barrier Quad
                                 drawQuad(pLeft, pRight, doorTopRight, doorTopLeft, CyberTertiary.copy(alpha = 0.4f * pulseAnim), CyberTertiary, 2f)
                                 drawLine(CyberTertiary, pLeft, doorTopLeft, strokeWidth = 3f)
                                 drawLine(CyberTertiary, pRight, doorTopRight, strokeWidth = 3f)
                             } else {
-                                // Unlocked Cyan Frame Pillars
                                 drawLine(CyberSecondary, pLeft, doorTopLeft, strokeWidth = 2.5f)
                                 drawLine(CyberSecondary, pRight, doorTopRight, strokeWidth = 2.5f)
                                 drawLine(CyberSecondary, doorTopLeft, doorTopRight, strokeWidth = 1.5f)
                             }
                         }
 
-                        // C) Ultima-Style 3D Isometric Loot Chests & Items
+                        // C) Loot Chests & Items
                         worldState.loot[pos]?.let { lootType ->
                             val lootColor = when (lootType) {
                                 LootType.CREDITS -> Color(0xFFFFD700)
@@ -1500,14 +1580,12 @@ fun Cyber2DMapCanvas(
                             val chestH = isoTileH * 0.8f
                             val lootCenter = Offset(bx + perspDx, by - chestH - hoverY + perspDy)
 
-                            // Floor Ground Shadow
                             drawOval(
                                 color = Color.Black.copy(alpha = 0.5f),
                                 topLeft = Offset(bx - isoTileW * 0.25f, by - isoTileH * 0.15f),
                                 size = androidx.compose.ui.geometry.Size(isoTileW * 0.5f, isoTileH * 0.3f)
                             )
 
-                            // Floating Hovering Crystal Diamond
                             val cTop = Offset(lootCenter.x, lootCenter.y - isoTileH * 0.3f)
                             val cRight = Offset(lootCenter.x + isoTileW * 0.2f, lootCenter.y)
                             val cBottom = Offset(lootCenter.x, lootCenter.y + isoTileH * 0.3f)
@@ -1517,19 +1595,17 @@ fun Cyber2DMapCanvas(
                             drawCircle(lootColor.copy(alpha = 0.3f * pulseAnim), isoTileW * 0.35f, lootCenter)
                         }
 
-                        // D) Ultima-Style Pseudoisometric Enemy Mechs
+                        // D) Enemy Mechs
                         worldState.enemies[pos]?.let { enemy ->
                             val mechH = isoTileH * 1.6f
                             val enemyCenter = Offset(bx + perspDx, by - mechH + perspDy)
 
-                            // Enemy Floor Shadow
                             drawOval(
                                 color = Color.Black.copy(alpha = 0.6f),
                                 topLeft = Offset(bx - isoTileW * 0.35f, by - isoTileH * 0.2f),
                                 size = androidx.compose.ui.geometry.Size(isoTileW * 0.7f, isoTileH * 0.4f)
                             )
 
-                            // Mech 3D Octagonal Core
                             val eTop = Offset(enemyCenter.x, enemyCenter.y - isoTileH * 0.4f)
                             val eRight = Offset(enemyCenter.x + isoTileW * 0.25f, enemyCenter.y)
                             val eBottom = Offset(enemyCenter.x, enemyCenter.y + isoTileH * 0.4f)
@@ -1537,11 +1613,9 @@ fun Cyber2DMapCanvas(
 
                             drawDiamond(eTop, eRight, eBottom, eLeft, CyberTertiary, Color.White, 1.5f)
                             
-                            // Red Ocular Scanner Sensor
                             drawCircle(Color.Red, isoTileW * 0.12f, enemyCenter)
                             drawCircle(Color.Yellow, isoTileW * 0.05f, enemyCenter)
 
-                            // Floating 3D HP Bar
                             val hpRatio = (enemy.hp.toFloat() / enemy.maxHp.toFloat()).coerceIn(0f, 1f)
                             val barW = isoTileW * 0.8f
                             val barH = 4.dp.toPx()
@@ -1555,52 +1629,18 @@ fun Cyber2DMapCanvas(
                                 size = androidx.compose.ui.geometry.Size(barW * hpRatio, barH)
                             )
                         }
-
-                        // E) Ultima-Style Pseudoisometric Hero Unit
-                        if (x == worldState.playerX && y == worldState.playerY) {
-                            val heroH = isoTileH * 1.9f
-                            val heroCenter = Offset(bx + perspDx, by - heroH + perspDy)
-
-                            // Hero Floor Shadow & Pulsing Stealth/Shield Ring
-                            drawOval(
-                                color = Color.Black.copy(alpha = 0.65f),
-                                topLeft = Offset(bx - isoTileW * 0.4f, by - isoTileH * 0.25f),
-                                size = androidx.compose.ui.geometry.Size(isoTileW * 0.8f, isoTileH * 0.5f)
-                            )
-                            drawCircle(CyberPrimary.copy(alpha = 0.3f + 0.3f * pulseAnim), isoTileW * 0.5f, Offset(bx, by), style = Stroke(width = 2f))
-
-                            // Hero Cyber-Ninja Body (Isometric Torso)
-                            val hTop = Offset(heroCenter.x, heroCenter.y - isoTileH * 0.45f)
-                            val hRight = Offset(heroCenter.x + isoTileW * 0.28f, heroCenter.y)
-                            val hBottom = Offset(heroCenter.x, heroCenter.y + isoTileH * 0.45f)
-                            val hLeft = Offset(heroCenter.x - isoTileW * 0.28f, heroCenter.y)
-
-                            drawDiamond(hTop, hRight, hBottom, hLeft, CyberPrimary, CyberSecondary, 2f)
-
-                            // Cyber Visor Head Unit
-                            drawCircle(CyberSecondary, isoTileW * 0.16f, heroCenter)
-                            drawCircle(Color.White, isoTileW * 0.07f, heroCenter)
-
-                            // Aiming Laser / Direction Blade Line
-                            val dx = worldState.playerDirection.first
-                            val dy = worldState.playerDirection.second
-                            if (dx != 0 || dy != 0) {
-                                val aimIsoX = (dx - dy) * (isoTileW * 0.4f)
-                                val aimIsoY = (dx + dy) * (isoTileH * 0.4f)
-                                drawLine(
-                                    color = Color.Yellow,
-                                    start = heroCenter,
-                                    end = Offset(heroCenter.x + aimIsoX, heroCenter.y + aimIsoY),
-                                    strokeWidth = 3f
-                                )
-                                drawCircle(Color.Yellow, 3.dp.toPx(), Offset(heroCenter.x + aimIsoX, heroCenter.y + aimIsoY))
-                            }
-                        }
                     }
                 }
             }
 
-            // 3. Dynamic Perspective Weather Rain Streaks
+            // Project Zomboid style X-Ray Translucency Ghost Overlay:
+            // If player is behind a wall, re-draw a translucent 0.6f alpha hero on top of walls
+            if (isPlayerBehindWall) {
+                val heroForeshortening = (1.0f + ((heroBy - centerY) * 0.0015f)).coerceIn(0.85f, 1.25f)
+                drawHeroUnit(heroBx, heroBy, baseIsoTileW * heroForeshortening, baseIsoTileH * heroForeshortening, 0.6f)
+            }
+
+            // Dynamic Weather Rain Streaks
             if (weatherState.condition == WeatherCondition.GLITCH_RAIN || weatherState.condition == WeatherCondition.DATA_STORM) {
                 val rainColor = Color(0x40CEF7FF)
                 for (i in 0..14) {
