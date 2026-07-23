@@ -14,6 +14,10 @@ data class PlayerStats(
     val medkits: Int = 2,
     val shieldCells: Int = 2,
     val keycards: Int = 0,
+    val hasNightVision: Boolean = true,
+    val isNightVisionActive: Boolean = false,
+    val hasThermalOptics: Boolean = true,
+    val isThermalActive: Boolean = false,
     val equippedWeapon: String = "Mono-Wire Razor",
     val weaponModMultiplier: Float = 1.0f
 ) {

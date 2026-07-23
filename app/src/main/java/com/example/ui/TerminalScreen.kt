@@ -1,5 +1,6 @@
 package com.example.ui
 
+import com.example.engine.*
 import android.content.res.Configuration
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -136,151 +137,96 @@ fun TerminalPortraitLayout(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 10.dp)
+            .padding(horizontal = 8.dp)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
-        // 1. Top Atmospheric Weather Banner
-        TopStatusBar(playerStats, weatherState, worldState)
+        // 1. Top Atmospheric Weather & Status HUD Bar
+        TopStatusBar(playerStats, weatherState, worldState, viewModel)
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
-        // 2. Middle Grid Partitions: Map with Floating Minimap, and full-height system stats block
-        Row(
+        // 2. Main Game Viewport: 2.5D Isometric Tactical Map Engine
+        Box(
             modifier = Modifier
                 .weight(1.0f)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .fillMaxWidth()
+                .border(BorderStroke(1.5.dp, CyberPrimary.copy(alpha = 0.4f)), RoundedCornerShape(12.dp))
+                .background(Color.Black.copy(alpha = 0.85f))
+                .mapSwipeControls { dx, dy -> viewModel.movePlayer(dx, dy) }
+                .padding(2.dp),
+            contentAlignment = Alignment.Center
         ) {
-            // 2D Level Graphical Map Engine Viewport with Swipe Support
-            Box(
-                modifier = Modifier
-                    .weight(1.3f)
-                    .fillMaxHeight()
-                    .border(BorderStroke(1.5.dp, CyberPrimary.copy(alpha = 0.4f)), RoundedCornerShape(16.dp))
-                    .background(Color.Black.copy(alpha = 0.8f))
-                    .mapSwipeControls { dx, dy -> viewModel.movePlayer(dx, dy) }
-                    .padding(4.dp),
-                contentAlignment = Alignment.Center
+            Cyber2DMapCanvas(
+                worldState = worldState,
+                weatherState = weatherState,
+                playerStats = playerStats,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // 3. Compact Horizontal Status Strip
+        val expRatio = playerStats.exp.toFloat() / playerStats.expToNextLevel.toFloat()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(BorderStroke(1.dp, CyberPrimary.copy(alpha = 0.3f)), RoundedCornerShape(8.dp))
+                .background(CyberSurface)
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Cyber2DMapCanvas(
-                    worldState = worldState,
-                    weatherState = weatherState,
-                    modifier = Modifier.fillMaxSize()
+                Text(
+                    text = "LVL:${playerStats.level} | ⛀:${playerStats.credits} | ${playerStats.equippedWeapon} | ATK:${playerStats.attack}",
+                    color = CyberText,
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
                 )
-            }
 
-            // Sidebar Status Chip
-            Column(
-                modifier = Modifier
-                    .weight(0.9f)
-                    .fillMaxHeight()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .border(BorderStroke(1.dp, CyberPrimary.copy(alpha = 0.35f)), RoundedCornerShape(12.dp))
-                        .background(CyberSurface)
-                        .padding(10.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(5.dp),
-                        modifier = Modifier.fillMaxHeight()
+                    Text(
+                        text = "EXP",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 8.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(50.dp)
+                            .height(5.dp)
+                            .background(Color(0xFF14142B))
+                            .border(0.5.dp, Color.Gray.copy(alpha = 0.3f), RoundedCornerShape(1.dp))
                     ) {
-                        Text(
-                            text = "░ STATUS CHIP ░",
-                            color = CyberPrimary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            letterSpacing = 0.5.sp
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(expRatio.coerceIn(0f, 1f))
+                                .background(CyberSecondary)
                         )
-                        Text(
-                            text = "DECK_LVL: ${playerStats.level}",
-                            color = CyberText,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold
-                        )
-                        
-                        ProgressBar("HP", playerStats.hp, playerStats.maxHp, CyberTertiary)
-                        ProgressBar("SHD", playerStats.shield, playerStats.maxShield, CyberPrimary)
-
-                        Spacer(modifier = Modifier.height(2.dp))
-                        
-                        Text(
-                            text = "CREDITS: ${playerStats.credits} ⛀",
-                            color = CyberSecondary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Text(
-                            text = "WEAPON: ${playerStats.equippedWeapon}",
-                            color = CyberText,
-                            fontSize = 9.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Text(
-                            text = "HACK_SKILL: ${playerStats.hackingSkill}",
-                            color = CyberPrimary,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        val expRatio = playerStats.exp.toFloat() / playerStats.expToNextLevel.toFloat()
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "EXP LEVEL",
-                                    color = Color.White.copy(alpha = 0.6f),
-                                    fontSize = 8.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                Text(
-                                    text = "${playerStats.exp}/${playerStats.expToNextLevel}",
-                                    color = Color.White,
-                                    fontSize = 9.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(4.dp)
-                                    .background(Color(0xFF14142B))
-                                    .border(0.5.dp, Color.Gray.copy(alpha = 0.3f), RoundedCornerShape(1.dp))
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxHeight()
-                                        .fillMaxWidth(expRatio.coerceIn(0f, 1f))
-                                        .background(CyberSecondary)
-                                )
-                            }
-                        }
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
-        // 3. Lower Division: Full-Width Dedicated Control Console & D-Pad (Replacing Engine Output & Term Log)
+        // 4. Compact Control Console
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(190.dp)
-                .border(BorderStroke(1.5.dp, CyberPrimary.copy(alpha = 0.4f)), RoundedCornerShape(16.dp))
+                .height(140.dp)
+                .border(BorderStroke(1.2.dp, CyberPrimary.copy(alpha = 0.4f)), RoundedCornerShape(12.dp))
                 .background(CyberSurface)
-                .padding(10.dp),
+                .padding(6.dp),
             contentAlignment = Alignment.Center
         ) {
             Row(
@@ -288,108 +234,108 @@ fun TerminalPortraitLayout(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left Inventory Utilities Column
+                // Left Inventory Utilities
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                     horizontalAlignment = Alignment.Start
                 ) {
                     Button(
                         onClick = { viewModel.useMedkit() },
                         colors = ButtonDefaults.buttonColors(containerColor = CyberTertiary.copy(alpha = 0.15f)),
                         border = BorderStroke(1.dp, CyberTertiary),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(6.dp),
                         modifier = Modifier
-                            .height(38.dp)
+                            .height(34.dp)
                             .testTag("medkit_button")
                     ) {
-                        Text("MEDKIT (${playerStats.medkits})", fontSize = 10.sp, color = CyberTertiary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Text("MEDKIT (${playerStats.medkits})", fontSize = 9.sp, color = CyberTertiary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     }
                     Button(
                         onClick = { viewModel.useShieldCell() },
                         colors = ButtonDefaults.buttonColors(containerColor = CyberPrimary.copy(alpha = 0.15f)),
                         border = BorderStroke(1.dp, CyberPrimary),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(6.dp),
                         modifier = Modifier
-                            .height(38.dp)
+                            .height(34.dp)
                             .testTag("shield_cell_button")
                     ) {
-                        Text("SHIELD (${playerStats.shieldCells})", fontSize = 10.sp, color = CyberPrimary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Text("SHIELD (${playerStats.shieldCells})", fontSize = 9.sp, color = CyberPrimary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     }
                     Button(
                         onClick = { viewModel.toggleShop(true) },
                         colors = ButtonDefaults.buttonColors(containerColor = CyberSecondary.copy(alpha = 0.15f)),
                         border = BorderStroke(1.dp, CyberSecondary),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(38.dp)
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.height(34.dp)
                     ) {
-                        Text("BLACK_MKT", fontSize = 10.sp, color = CyberSecondary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Text("BLACK_MKT", fontSize = 9.sp, color = CyberSecondary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     }
                 }
 
-                // Center Column: Prominent Ergonomic Continuous D-Pad
+                // Center Ergonomic Continuous D-Pad
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
                     DPadButton("▲", "move_up") { viewModel.movePlayer(0, -1) }
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         DPadButton("◀", "move_left") { viewModel.movePlayer(-1, 0) }
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(8.dp))
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(6.dp))
                                 .background(CyberSecondary.copy(alpha = 0.2f))
-                                .border(BorderStroke(1.5.dp, CyberSecondary), RoundedCornerShape(8.dp))
+                                .border(BorderStroke(1.2.dp, CyberSecondary), RoundedCornerShape(6.dp))
                                 .clickable { viewModel.activateElevator() },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("LIFT", fontSize = 11.sp, color = CyberSecondary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Text("LIFT", fontSize = 9.sp, color = CyberSecondary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                         }
                         DPadButton("▶", "move_right") { viewModel.movePlayer(1, 0) }
                     }
                     DPadButton("▼", "move_down") { viewModel.movePlayer(0, 1) }
                 }
 
-                // Right Column: Quick Interactive Actions & Status Info
+                // Right Quick Actions & Status Info
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                     horizontalAlignment = Alignment.End
                 ) {
                     Button(
                         onClick = { viewModel.activateElevator() },
                         colors = ButtonDefaults.buttonColors(containerColor = CyberSecondary.copy(alpha = 0.15f)),
                         border = BorderStroke(1.dp, CyberSecondary),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(38.dp)
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.height(34.dp)
                     ) {
-                        Text("ELEVATOR ⛛", fontSize = 10.sp, color = CyberSecondary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Text("ELEVATOR ⛛", fontSize = 9.sp, color = CyberSecondary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     }
                     Box(
                         modifier = Modifier
-                            .height(38.dp)
-                            .border(BorderStroke(1.dp, CyberPrimary.copy(alpha = 0.4f)), RoundedCornerShape(8.dp))
+                            .height(34.dp)
+                            .border(BorderStroke(1.dp, CyberPrimary.copy(alpha = 0.4f)), RoundedCornerShape(6.dp))
                             .background(Color.Black.copy(alpha = 0.3f))
-                            .padding(horizontal = 10.dp, vertical = 2.dp),
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("KEYCARDS: ${playerStats.keycards}", fontSize = 10.sp, color = CyberPrimary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Text("KEYS: ${playerStats.keycards}", fontSize = 9.sp, color = CyberPrimary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     }
                     Box(
                         modifier = Modifier
-                            .height(38.dp)
-                            .border(BorderStroke(1.dp, CyberTertiary.copy(alpha = 0.4f)), RoundedCornerShape(8.dp))
+                            .height(34.dp)
+                            .border(BorderStroke(1.dp, CyberPrimary.copy(alpha = 0.4f)), RoundedCornerShape(6.dp))
                             .background(Color.Black.copy(alpha = 0.3f))
-                            .padding(horizontal = 10.dp, vertical = 2.dp),
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("ATK POWER: ${playerStats.attack}", fontSize = 10.sp, color = CyberTertiary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Text("HACK: ${playerStats.hackingSkill}", fontSize = 9.sp, color = CyberPrimary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     }
                 }
             }
@@ -413,7 +359,7 @@ fun TerminalLandscapeLayout(
             .navigationBarsPadding()
     ) {
         // Compact Status Header for Landscape
-        TopStatusBar(playerStats, weatherState, worldState)
+        TopStatusBar(playerStats, weatherState, worldState, viewModel)
 
         Spacer(modifier = Modifier.height(4.dp))
 
@@ -438,6 +384,7 @@ fun TerminalLandscapeLayout(
                 Cyber2DMapCanvas(
                     worldState = worldState,
                     weatherState = weatherState,
+                    playerStats = playerStats,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -644,105 +591,129 @@ fun DPadButton(label: String, testTag: String, onClick: () -> Unit) {
 
 // Custom status bars
 @Composable
-fun TopStatusBar(stats: PlayerStats, ws: WeatherState, world: WorldState) {
+fun TopStatusBar(stats: PlayerStats, ws: WeatherState, world: WorldState, viewModel: GameViewModel) {
     val zoneName = when (world.zone) {
-        ZoneType.BUILDING -> "BUILDING_ZONE_0${world.currentFloor}"
-        ZoneType.COLLECTORS -> "COLLECT_ZONE_0${world.currentFloor}"
-        ZoneType.CITY -> "CITY_ZONE_0${world.currentFloor}"
+        ZoneType.BUILDING -> "BLDG_0${world.currentFloor}"
+        ZoneType.COLLECTORS -> "COLL_0${world.currentFloor}"
+        ZoneType.CITY -> "CITY_0${world.currentFloor}"
     }
 
-    val isStorm = ws.condition == WeatherCondition.DATA_STORM
-    val statusText = if (isStorm) "DATA STORM ACTIVE" else "SYS_SECURE_LINK"
+    val lightingManager = remember { LightingManager() }
+    val lightMap = remember(world.playerX, world.playerY, world.explored, stats.isNightVisionActive, world.enemies.size) {
+        lightingManager.computeLightMap(world, stats.isNightVisionActive)
+    }
+    val lightLevel = lightingManager.getPlayerLightExposure(Pair(world.playerX, world.playerY), lightMap)
+    val stealthMult = lightingManager.getEnemyDetectionMultiplier(Pair(world.playerX, world.playerY), lightMap, ws.condition)
+
+    val weatherIcon = when (ws.condition) {
+        WeatherCondition.CLEAR -> "☀"
+        WeatherCondition.LIGHT_RAIN -> "🌧"
+        WeatherCondition.HEAVY_RAIN -> "🌧⚡"
+        WeatherCondition.STORM -> "⛈"
+        WeatherCondition.GLITCH_RAIN -> "⚡"
+        WeatherCondition.FOG -> "🌫"
+        WeatherCondition.NEON_HAZE -> "🌆"
+    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color(0xFF0A0A0F))
-            .border(BorderStroke(1.dp, CyberPrimary.copy(alpha = 0.2f)), RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .border(BorderStroke(1.dp, CyberPrimary.copy(alpha = 0.25f)), RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left side: Vitals
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
+        // Left side: Vitals & Stealth
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Box(modifier = Modifier.size(5.dp).background(CyberTertiary, RoundedCornerShape(1.dp)))
                 Text(
-                    text = "VITALS",
+                    text = "${stats.hp} HP",
+                    color = Color.White,
                     fontSize = 9.sp,
-                    color = CyberText.copy(alpha = 0.5f),
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
                     fontFamily = FontFamily.Monospace
                 )
-                Box(
-                    modifier = Modifier
-                        .width(30.dp)
-                        .height(1.dp)
-                        .background(CyberText.copy(alpha = 0.15f))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Box(modifier = Modifier.size(5.dp).background(CyberPrimary, RoundedCornerShape(1.dp)))
+                Text(
+                    text = "${stats.shield} EN",
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
                 )
             }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .background(CyberTertiary, RoundedCornerShape(1.dp))
-                    )
-                    Text(
-                        text = "${stats.hp} HP",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .background(CyberPrimary, RoundedCornerShape(1.dp))
-                    )
-                    Text(
-                        text = "${stats.shield} EN",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-            }
+
+            val expColor = if (lightLevel < 0.35f) CyberSecondary else if (lightLevel > 0.7f) CyberTertiary else CyberPrimary
+            Text(
+                text = "LGT:${(lightLevel * 100).toInt()}% DET:${(stealthMult * 100).toInt()}%",
+                fontSize = 8.sp,
+                color = expColor,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace
+            )
         }
 
-        // Right side: Area / State
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = statusText,
-                fontSize = 8.sp,
-                color = if (isStorm) CyberWarning else CyberSecondary,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp,
-                fontFamily = FontFamily.Monospace
-            )
-            Text(
-                text = zoneName,
-                fontSize = 14.sp,
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp,
-                fontFamily = FontFamily.Monospace
-            )
+        // Right side: Cyberware Optics & Weather
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(if (stats.isNightVisionActive) Color(0xFF00FF66).copy(alpha = 0.25f) else Color.White.copy(alpha = 0.05f))
+                    .border(BorderStroke(0.8.dp, if (stats.isNightVisionActive) Color(0xFF00FF66) else Color.White.copy(alpha = 0.2f)), RoundedCornerShape(4.dp))
+                    .clickable { viewModel.toggleNightVision() }
+                    .padding(horizontal = 5.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = "NV ${if (stats.isNightVisionActive) "ON" else "OFF"}",
+                    fontSize = 7.5.sp,
+                    color = if (stats.isNightVisionActive) Color(0xFF00FF66) else Color.White.copy(alpha = 0.6f),
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(if (stats.isThermalActive) Color(0xFFFF5500).copy(alpha = 0.25f) else Color.White.copy(alpha = 0.05f))
+                    .border(BorderStroke(0.8.dp, if (stats.isThermalActive) Color(0xFFFF5500) else Color.White.copy(alpha = 0.2f)), RoundedCornerShape(4.dp))
+                    .clickable { viewModel.toggleThermalOptics() }
+                    .padding(horizontal = 5.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = "TH ${if (stats.isThermalActive) "ON" else "OFF"}",
+                    fontSize = 7.5.sp,
+                    color = if (stats.isThermalActive) Color(0xFFFF5500) else Color.White.copy(alpha = 0.6f),
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(CyberSurface)
+                    .border(BorderStroke(0.8.dp, CyberPrimary.copy(alpha = 0.3f)), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 5.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = "$zoneName $weatherIcon (${ws.turnsRemaining}T)",
+                    color = CyberPrimary,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
         }
     }
 }
@@ -1266,8 +1237,17 @@ fun ShopOverlay(stats: PlayerStats, viewModel: GameViewModel, isLandscape: Boole
 fun Cyber2DMapCanvas(
     worldState: WorldState,
     weatherState: WeatherState,
+    playerStats: PlayerStats,
     modifier: Modifier = Modifier
 ) {
+    val lightingManager = remember { LightingManager() }
+    val lightMap = remember(worldState.playerX, worldState.playerY, worldState.explored, playerStats.isNightVisionActive, worldState.enemies.size) {
+        lightingManager.computeLightMap(worldState, playerStats.isNightVisionActive)
+    }
+    val lightSources = remember(worldState.playerX, worldState.playerY, worldState.enemies.size, worldState.rooms.size) {
+        lightingManager.generateLightSources(worldState)
+    }
+
     // 1. Smooth 120ms Movement Tweening for smooth 2.5D position transitions
     val animatedPlayerX by animateFloatAsState(
         targetValue = worldState.playerX.toFloat(),
@@ -1408,8 +1388,10 @@ fun Cyber2DMapCanvas(
                     topLeft = Offset(hBx - hIsoW * 0.4f, hBy - hIsoH * 0.25f),
                     size = androidx.compose.ui.geometry.Size(hIsoW * 0.8f, hIsoH * 0.5f)
                 )
+
+                val heroMainColor = if (playerStats.isNightVisionActive) Color(0xFF00FF66) else CyberPrimary
                 drawCircle(
-                    color = CyberPrimary.copy(alpha = (0.3f + 0.3f * pulseAnim) * alphaFactor),
+                    color = heroMainColor.copy(alpha = (0.3f + 0.3f * pulseAnim) * alphaFactor),
                     radius = hIsoW * 0.5f,
                     center = Offset(hBx, hBy),
                     style = Stroke(width = 2f)
@@ -1421,25 +1403,35 @@ fun Cyber2DMapCanvas(
                 val hBottom = Offset(heroCenter.x, heroCenter.y + hIsoH * 0.45f)
                 val hLeft = Offset(heroCenter.x - hIsoW * 0.28f, heroCenter.y)
 
-                drawDiamond(hTop, hRight, hBottom, hLeft, CyberPrimary.copy(alpha = alphaFactor), CyberSecondary.copy(alpha = alphaFactor), 2f)
+                drawDiamond(hTop, hRight, hBottom, hLeft, heroMainColor.copy(alpha = alphaFactor), CyberSecondary.copy(alpha = alphaFactor), 2f)
 
                 // Cyber Visor Head Unit
                 drawCircle(CyberSecondary.copy(alpha = alphaFactor), hIsoW * 0.16f, heroCenter)
                 drawCircle(Color.White.copy(alpha = alphaFactor), hIsoW * 0.07f, heroCenter)
 
-                // Aiming Laser / Direction Line
+                // Flashlight Cone Visual on Hero
                 val dx = worldState.playerDirection.first
                 val dy = worldState.playerDirection.second
                 if (dx != 0 || dy != 0) {
-                    val aimIsoX = (dx - dy) * (hIsoW * 0.4f)
-                    val aimIsoY = (dx + dy) * (hIsoH * 0.4f)
+                    val aimIsoX = (dx - dy) * (hIsoW * 1.2f)
+                    val aimIsoY = (dx + dy) * (hIsoH * 1.2f)
+                    val coneColor = if (playerStats.isNightVisionActive) Color(0xFF00FF66) else Color.White
+
+                    // Render Flashlight Light Cone
+                    val conePath = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(heroCenter.x, heroCenter.y)
+                        lineTo(heroCenter.x + aimIsoX - aimIsoY * 0.5f, heroCenter.y + aimIsoY + aimIsoX * 0.5f)
+                        lineTo(heroCenter.x + aimIsoX + aimIsoY * 0.5f, heroCenter.y + aimIsoY - aimIsoX * 0.5f)
+                        close()
+                    }
+                    drawPath(conePath, coneColor.copy(alpha = 0.22f * alphaFactor))
+
                     drawLine(
-                        color = Color.Yellow.copy(alpha = alphaFactor),
+                        color = coneColor.copy(alpha = alphaFactor),
                         start = heroCenter,
                         end = Offset(heroCenter.x + aimIsoX, heroCenter.y + aimIsoY),
                         strokeWidth = 3f
                     )
-                    drawCircle(Color.Yellow.copy(alpha = alphaFactor), 3.dp.toPx(), Offset(heroCenter.x + aimIsoX, heroCenter.y + aimIsoY))
                 }
             }
 
@@ -1447,7 +1439,49 @@ fun Cyber2DMapCanvas(
             val heroBy = camOffsetY + (animatedPlayerX + animatedPlayerY) * (baseIsoTileH / 2f)
             val heroDepthSum = (animatedPlayerX + animatedPlayerY).toInt()
 
-            // 3. PAINTER'S ALGORITHM ORDER with Foreshortening Perspective Scaling
+            // 3. Render Static Light Source Ground Glow Pools (Streetlights / Neon Signs)
+            lightSources.forEach { source ->
+                if (worldState.explored.contains(source.position)) {
+                    val sx = source.position.first
+                    val sy = source.position.second
+                    val sbx = camOffsetX + (sx - sy) * (baseIsoTileW / 2f)
+                    val sby = camOffsetY + (sx + sy) * (baseIsoTileH / 2f)
+
+                    if (sbx >= -100f && sbx <= size.width + 100f && sby >= -100f && sby <= size.height + 100f) {
+                        val lightRadius = baseIsoTileW * source.radius.toFloat() * 0.45f
+                        val lightColor = Color(source.colorHex)
+                        drawCircle(
+                            color = lightColor.copy(alpha = 0.22f * source.intensity),
+                            radius = lightRadius,
+                            center = Offset(sbx, sby)
+                        )
+                        drawCircle(
+                            color = lightColor.copy(alpha = 0.45f * source.intensity),
+                            radius = lightRadius * 0.4f,
+                            center = Offset(sbx, sby)
+                        )
+                    }
+                }
+            }
+
+            // 3. PAINTER'S ALGORITHM ORDER with Foreshortening Perspective Scaling & Room Highlighting
+            // Draw Room Outlines on Floor Canvas
+            for (room in worldState.rooms) {
+                val rx = room.x
+                val ry = room.y
+                val rw = room.w
+                val rh = room.h
+
+                // Room boundary vertices in Isometric Space
+                val rTop = Offset(camOffsetX + (rx - ry) * (baseIsoTileW / 2f), camOffsetY + (rx + ry) * (baseIsoTileH / 2f) - baseIsoTileH / 2f)
+                val rRight = Offset(camOffsetX + (rx + rw - ry) * (baseIsoTileW / 2f), camOffsetY + (rx + rw + ry) * (baseIsoTileH / 2f))
+                val rBottom = Offset(camOffsetX + (rx + rw - (ry + rh)) * (baseIsoTileW / 2f), camOffsetY + (rx + rw + ry + rh) * (baseIsoTileH / 2f) + baseIsoTileH / 2f)
+                val rLeft = Offset(camOffsetX + (rx - (ry + rh)) * (baseIsoTileW / 2f), camOffsetY + (rx + ry + rh) * (baseIsoTileH / 2f))
+
+                val highlightColor = if (room.isDangerZone) Color.Red.copy(alpha = 0.45f) else CyberPrimary.copy(alpha = 0.35f)
+                drawDiamond(rTop, rRight, rBottom, rLeft, highlightColor.copy(alpha = 0.05f), highlightColor, 2f)
+            }
+
             for (sum in 0 until (gridW + gridH - 1)) {
                 
                 // Draw Hero at its exact depth order in the painter pass
@@ -1467,7 +1501,7 @@ fun Cyber2DMapCanvas(
                     val bx = camOffsetX + (x - y) * (baseIsoTileW / 2f)
                     val by = camOffsetY + (x + y) * (baseIsoTileH / 2f)
 
-                    // 3. Foreshortening Camera Scale: objects further down screen are slightly larger
+                    // Foreshortening Camera Scale: objects further down screen are slightly larger
                     val foreshorteningScale = (1.0f + ((by - centerY) * 0.0015f)).coerceIn(0.85f, 1.25f)
                     val isoTileW = baseIsoTileW * foreshorteningScale
                     val isoTileH = baseIsoTileH * foreshorteningScale
@@ -1491,6 +1525,9 @@ fun Cyber2DMapCanvas(
                     }
 
                     val isWall = worldState.walls.contains(pos)
+                    val isRoad = worldState.roadTiles.contains(pos)
+                    val isWater = worldState.waterTiles.contains(pos)
+                    val tileLight = lightMap[pos] ?: 0.35f
 
                     // GTA2 / MGS Perspective Shift Vector relative to camera center
                     val perspDx = (bx - centerX) * 0.06f
@@ -1503,33 +1540,56 @@ fun Cyber2DMapCanvas(
                         val rBottom = Offset(pBottom.x + perspDx, pBottom.y - wallHeight + perspDy)
                         val rLeft = Offset(pLeft.x + perspDx, pLeft.y - wallHeight + perspDy)
 
-                        // 1. Left-Front Wall Face (Shadowed)
-                        drawQuad(pLeft, pBottom, rBottom, rLeft, Color(0xFF0F172A), zoneThemeColor.copy(alpha = 0.3f), 1f)
+                        val wallBaseColor = if (playerStats.isNightVisionActive) Color(0xFF003311) else Color(0xFF0F172A)
+                        val roofBaseColor = if (playerStats.isNightVisionActive) Color(0xFF00551A) else Color(0xFF0D1B2A)
+                        val borderWallColor = if (playerStats.isNightVisionActive) Color(0xFF00FF66) else zoneThemeColor.copy(alpha = (0.2f + 0.5f * tileLight))
+
+                        // 1. Left-Front Wall Face
+                        drawQuad(pLeft, pBottom, rBottom, rLeft, wallBaseColor, borderWallColor, 1f)
                         
-                        // 2. Right-Front Wall Face (Lit)
-                        drawQuad(pBottom, pRight, rRight, rBottom, Color(0xFF1E293B), zoneThemeColor.copy(alpha = 0.3f), 1f)
+                        // 2. Right-Front Wall Face
+                        drawQuad(pBottom, pRight, rRight, rBottom, wallBaseColor.copy(alpha = 0.9f), borderWallColor, 1f)
 
                         // 3. Top Roof Face
-                        drawDiamond(rTop, rRight, rBottom, rLeft, Color(0xFF0D1B2A), zoneThemeColor.copy(alpha = 0.6f), 1.5f)
+                        drawDiamond(rTop, rRight, rBottom, rLeft, roofBaseColor, borderWallColor, 1.5f)
                         
                         // Roof Inner Inset Pattern
                         val inTop = Offset(rTop.x, rTop.y + isoTileH * 0.15f)
                         val inRight = Offset(rRight.x - isoTileW * 0.15f, rRight.y)
                         val inBottom = Offset(rBottom.x, rBottom.y - isoTileH * 0.15f)
                         val inLeft = Offset(rLeft.x + isoTileW * 0.15f, rLeft.y)
-                        drawDiamond(inTop, inRight, inBottom, inLeft, Color(0xFF1B263B), zoneThemeColor.copy(alpha = 0.4f), 1f)
+                        drawDiamond(inTop, inRight, inBottom, inLeft, roofBaseColor, borderWallColor, 1f)
 
-                        // Vertical Edge Bevel Highlights
-                        drawLine(Color.White.copy(alpha = 0.35f), pBottom, rBottom, strokeWidth = 2f)
-                        drawLine(zoneThemeColor, rLeft, rBottom, strokeWidth = 1.5f)
-                        drawLine(zoneThemeColor, rBottom, rRight, strokeWidth = 1.5f)
+                        // Bevel Highlights
+                        drawLine(Color.White.copy(alpha = 0.35f * tileLight), pBottom, rBottom, strokeWidth = 2f)
+                        drawLine(borderWallColor, rLeft, rBottom, strokeWidth = 1.5f)
+                        drawLine(borderWallColor, rBottom, rRight, strokeWidth = 1.5f)
 
+                    } else if (isWater) {
+                        // Water Canal Tiles
+                        val waterColor = if (playerStats.isNightVisionActive) Color(0xFF004411) else Color(0xFF0369A1)
+                        drawDiamond(pTop, pRight, pBottom, pLeft, waterColor, Color.Cyan, 1.5f)
+                        drawCircle(Color.Cyan.copy(alpha = 0.4f * tileLight), isoTileW * 0.25f, Offset(bx, by))
+                    } else if (isRoad) {
+                        // City Road Tiles
+                        val roadColor = if (playerStats.isNightVisionActive) Color(0xFF002208) else Color(0xFF1E293B)
+                        drawDiamond(pTop, pRight, pBottom, pLeft, roadColor, Color(0xFF334155), 1f)
+                        // Lane Markings
+                        drawLine(Color.Yellow.copy(alpha = 0.5f * tileLight), pLeft, pRight, strokeWidth = 1.5f)
                     } else {
                         // --- PSEUDOISOMETRIC FLOOR TILE ---
-                        drawDiamond(pTop, pRight, pBottom, pLeft, Color(0xFF080C16), Color(0xFF1E293B), 1f)
+                        val floorFill = if (playerStats.isNightVisionActive) Color(0xFF001A08) else Color(0xFF080C16)
+                        val floorBorder = if (playerStats.isNightVisionActive) Color(0xFF00FF66).copy(alpha = 0.4f) else Color(0xFF1E293B)
+                        drawDiamond(pTop, pRight, pBottom, pLeft, floorFill, floorBorder, 1f)
                         
+                        // Darkness Shadow Overlay for unlit tiles in normal vision
+                        if (!playerStats.isNightVisionActive && tileLight < 0.65f) {
+                            val shadowAlpha = (0.65f - tileLight).coerceIn(0f, 0.65f)
+                            drawDiamond(pTop, pRight, pBottom, pLeft, Color.Black.copy(alpha = shadowAlpha))
+                        }
+
                         drawCircle(
-                            color = zoneThemeColor.copy(alpha = 0.2f),
+                            color = zoneThemeColor.copy(alpha = 0.2f * tileLight),
                             radius = isoTileW * 0.08f,
                             center = Offset(bx, by)
                         )
@@ -1555,18 +1615,19 @@ fun Cyber2DMapCanvas(
                             val doorTopLeft = Offset(pLeft.x + perspDx, pLeft.y - doorHeight + perspDy)
                             val doorTopRight = Offset(pRight.x + perspDx, pRight.y - doorHeight + perspDy)
 
+                            val doorColor = if (playerStats.isThermalActive) Color(0xFFFF5500) else if (door.isLocked) CyberTertiary else CyberSecondary
                             if (door.isLocked) {
-                                drawQuad(pLeft, pRight, doorTopRight, doorTopLeft, CyberTertiary.copy(alpha = 0.4f * pulseAnim), CyberTertiary, 2f)
-                                drawLine(CyberTertiary, pLeft, doorTopLeft, strokeWidth = 3f)
-                                drawLine(CyberTertiary, pRight, doorTopRight, strokeWidth = 3f)
+                                drawQuad(pLeft, pRight, doorTopRight, doorTopLeft, doorColor.copy(alpha = 0.4f * pulseAnim), doorColor, 2f)
+                                drawLine(doorColor, pLeft, doorTopLeft, strokeWidth = 3f)
+                                drawLine(doorColor, pRight, doorTopRight, strokeWidth = 3f)
                             } else {
-                                drawLine(CyberSecondary, pLeft, doorTopLeft, strokeWidth = 2.5f)
-                                drawLine(CyberSecondary, pRight, doorTopRight, strokeWidth = 2.5f)
-                                drawLine(CyberSecondary, doorTopLeft, doorTopRight, strokeWidth = 1.5f)
+                                drawLine(doorColor, pLeft, doorTopLeft, strokeWidth = 2.5f)
+                                drawLine(doorColor, pRight, doorTopRight, strokeWidth = 2.5f)
+                                drawLine(doorColor, doorTopLeft, doorTopRight, strokeWidth = 1.5f)
                             }
                         }
 
-                        // C) Loot Chests & Items
+                        // C) Loot Chests, Terminals & Interactive Items
                         worldState.loot[pos]?.let { lootType ->
                             val lootColor = when (lootType) {
                                 LootType.CREDITS -> Color(0xFFFFD700)
@@ -1574,6 +1635,11 @@ fun Cyber2DMapCanvas(
                                 LootType.SHIELD_CELL -> CyberPrimary
                                 LootType.WEAPON_MOD -> CyberWarning
                                 LootType.KEYCARD -> Color(0xFFA855F7)
+                                LootType.TERMINAL -> Color(0xFF06B6D4)
+                                LootType.COMPUTER -> Color(0xFF3B82F6)
+                                LootType.CAMERA -> Color(0xFFEF4444)
+                                LootType.DATA_STORE -> Color(0xFF8B5CF6)
+                                LootType.HEALING_STATION -> Color(0xFF10B981)
                             }
 
                             val hoverY = sin((rotateAnim * 0.05f).toDouble()).toFloat() * 4f
@@ -1606,12 +1672,17 @@ fun Cyber2DMapCanvas(
                                 size = androidx.compose.ui.geometry.Size(isoTileW * 0.7f, isoTileH * 0.4f)
                             )
 
+                            val enemyFill = if (playerStats.isThermalActive) Color(0xFFFF2200) else CyberTertiary
                             val eTop = Offset(enemyCenter.x, enemyCenter.y - isoTileH * 0.4f)
                             val eRight = Offset(enemyCenter.x + isoTileW * 0.25f, enemyCenter.y)
                             val eBottom = Offset(enemyCenter.x, enemyCenter.y + isoTileH * 0.4f)
                             val eLeft = Offset(enemyCenter.x - isoTileW * 0.25f, enemyCenter.y)
 
-                            drawDiamond(eTop, eRight, eBottom, eLeft, CyberTertiary, Color.White, 1.5f)
+                            drawDiamond(eTop, eRight, eBottom, eLeft, enemyFill, Color.White, 1.5f)
+
+                            if (playerStats.isThermalActive) {
+                                drawCircle(Color(0xFFFF3300).copy(alpha = 0.5f * pulseAnim), isoTileW * 0.65f, enemyCenter, style = Stroke(width = 3f))
+                            }
                             
                             drawCircle(Color.Red, isoTileW * 0.12f, enemyCenter)
                             drawCircle(Color.Yellow, isoTileW * 0.05f, enemyCenter)
@@ -1640,44 +1711,104 @@ fun Cyber2DMapCanvas(
                 drawHeroUnit(heroBx, heroBy, baseIsoTileW * heroForeshortening, baseIsoTileH * heroForeshortening, 0.6f)
             }
 
-            // Dynamic Weather Rain Streaks
-            if (weatherState.condition == WeatherCondition.GLITCH_RAIN || weatherState.condition == WeatherCondition.DATA_STORM) {
-                val rainColor = Color(0x40CEF7FF)
-                for (i in 0..14) {
-                    val rx = ((i * 79 + (rotateAnim * 4).toInt()) % size.width.toInt()).toFloat()
-                    val ry = ((i * 47 + (rotateAnim * 8).toInt()) % size.height.toInt()).toFloat()
-                    drawLine(
-                        color = rainColor,
-                        start = Offset(rx, ry),
-                        end = Offset(rx - 12f, ry + 26f),
-                        strokeWidth = 1.8f
-                    )
+            // Dynamic Weather Particles & Atmospheric Visual System
+            when (weatherState.condition) {
+                WeatherCondition.LIGHT_RAIN, WeatherCondition.HEAVY_RAIN, WeatherCondition.STORM -> {
+                    val count = if (weatherState.condition == WeatherCondition.STORM) 45 else if (weatherState.condition == WeatherCondition.HEAVY_RAIN) 30 else 15
+                    val rainColor = if (weatherState.condition == WeatherCondition.STORM) Color(0x60E0E7FF) else Color(0x40CEF7FF)
+                    val windDx = if (weatherState.condition == WeatherCondition.STORM) -20f else -10f
+
+                    for (i in 0 until count) {
+                        val rx = ((i * 79 + (rotateAnim * 6).toInt()) % size.width.toInt()).toFloat()
+                        val ry = ((i * 47 + (rotateAnim * 12).toInt()) % size.height.toInt()).toFloat()
+                        drawLine(
+                            color = rainColor,
+                            start = Offset(rx, ry),
+                            end = Offset(rx + windDx, ry + 28f),
+                            strokeWidth = 2f
+                        )
+                    }
+
+                    // Storm Lightning Flash
+                    if (weatherState.condition == WeatherCondition.STORM && pulseAnim > 0.88f) {
+                        drawRect(Color(0x25A855F7), Offset.Zero, size)
+                    }
+                }
+                WeatherCondition.GLITCH_RAIN -> {
+                    for (i in 0..18) {
+                        val gx = ((i * 113 + (rotateAnim * 8).toInt()) % size.width.toInt()).toFloat()
+                        val gy = ((i * 61 + (rotateAnim * 5).toInt()) % size.height.toInt()).toFloat()
+                        val glColor = if (i % 2 == 0) Color(0x60FF00FF) else Color(0x6000FFFF)
+                        drawRect(
+                            color = glColor,
+                            topLeft = Offset(gx, gy),
+                            size = androidx.compose.ui.geometry.Size(12f, 4f)
+                        )
+                    }
+                }
+                WeatherCondition.FOG -> {
+                    for (i in 0..8) {
+                        val fx = ((i * 140 + (rotateAnim * 2).toInt()) % size.width.toInt()).toFloat()
+                        val fy = (i * 80 % size.height.toInt()).toFloat()
+                        drawOval(
+                            color = Color(0x2594A3B8),
+                            topLeft = Offset(fx - 60f, fy - 25f),
+                            size = androidx.compose.ui.geometry.Size(180f, 60f)
+                        )
+                    }
+                }
+                WeatherCondition.NEON_HAZE -> {
+                    for (i in 0..12) {
+                        val hx = ((i * 95 + (rotateAnim * 3).toInt()) % size.width.toInt()).toFloat()
+                        val hy = ((i * 53 - (rotateAnim * 2).toInt()) % size.height.toInt()).toFloat()
+                        val hColor = if (i % 2 == 0) Color(0x35FF00AA) else Color(0x3500E5FF)
+                        drawCircle(hColor, 18f, Offset(hx, hy))
+                    }
+                }
+                WeatherCondition.CLEAR -> {
+                    // Subtle ambient cyber dust
+                    for (i in 0..6) {
+                        val cx = ((i * 120 + (rotateAnim).toInt()) % size.width.toInt()).toFloat()
+                        val cy = ((i * 90).toInt() % size.height.toInt()).toFloat()
+                        drawCircle(Color(0x2000FFCC), 2.dp.toPx(), Offset(cx, cy))
+                    }
                 }
             }
+
+            // Weather & Cyberware Color Grading Overlay
+            val tintColor = when {
+                playerStats.isNightVisionActive -> Color(0x1500FF66)
+                weatherState.condition == WeatherCondition.STORM -> Color(0x203B0764)
+                weatherState.condition == WeatherCondition.GLITCH_RAIN -> Color(0x1500F0FF)
+                weatherState.condition == WeatherCondition.NEON_HAZE -> Color(0x18FF0077)
+                weatherState.condition == WeatherCondition.FOG -> Color(0x20334155)
+                else -> Color(0x10020817)
+            }
+            drawRect(tintColor, Offset.Zero, size)
         }
 
         // Floating Micro 2D Tactical Minimap Overlay (Top-Right)
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(8.dp)
-                .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(8.dp))
-                .border(BorderStroke(1.dp, CyberTertiary.copy(alpha = 0.6f)), RoundedCornerShape(8.dp))
-                .padding(6.dp),
+                .padding(4.dp)
+                .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(6.dp))
+                .border(BorderStroke(1.dp, CyberTertiary.copy(alpha = 0.5f)), RoundedCornerShape(6.dp))
+                .padding(3.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "3D_ISOMAP",
+                    text = "RADAR",
                     color = CyberTertiary,
-                    fontSize = 8.sp,
+                    fontSize = 7.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.padding(bottom = 4.dp),
+                    modifier = Modifier.padding(bottom = 2.dp),
                     letterSpacing = 0.5.sp
                 )
                 Canvas(
-                    modifier = Modifier.size(75.dp)
+                    modifier = Modifier.size(46.dp)
                 ) {
                     val mSize = minOf(size.width, size.height)
                     val mTile = mSize / worldState.width

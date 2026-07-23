@@ -145,24 +145,40 @@ class GameViewModel : ViewModel() {
             return
         }
 
-        // Locked Door check
+        // Door interaction & transition check
         if (state.doors.containsKey(targetCoord)) {
             val door = state.doors[targetCoord]!!
-            if (door.isLocked && !door.isHacked) {
-                // Check if player has a bypass keycard
+
+            // Handle Metroid-style transition door (e.g. City building entrance or sector lift)
+            if (door.transitionFloor != null) {
+                val targetFloor = door.transitionFloor
+                log("SEAMLESS_TRANSITION // Crossing threshold into Sector F-$targetFloor...")
+                cacheCurrentFloorState()
+                loadFloor(targetFloor)
+                return
+            }
+
+            if (door.isLocked && !door.isHacked && !door.isOpen) {
                 val stats = _playerStats.value
                 if (stats.keycards > 0) {
                     _playerStats.update { it.copy(keycards = stats.keycards - 1) }
                     _worldState.update {
                         val newDoors = it.doors.toMutableMap()
-                        newDoors[targetCoord] = door.copy(isLocked = false, isHacked = true)
+                        newDoors[targetCoord] = door.copy(isLocked = false, isOpen = true, isHacked = true)
                         it.copy(doors = newDoors)
                     }
-                    log("SEC_PASS // Bypassed locked portal using physical security keycard.")
+                    log("SEC_PASS // Unlocked portal using keycard.")
                 } else {
-                    log("SEC_BLOCK // Locked gate encountered. Initializing BREACH_PROTOCOL...")
+                    log("SEC_BLOCK // Locked gateway encountered. Initializing BREACH_PROTOCOL...")
                     startHackingMinigame(targetCoord, null)
                     return
+                }
+            } else {
+                // Open unlocked door
+                _worldState.update {
+                    val newDoors = it.doors.toMutableMap()
+                    newDoors[targetCoord] = door.copy(isOpen = true)
+                    it.copy(doors = newDoors)
                 }
             }
         }
@@ -207,19 +223,22 @@ class GameViewModel : ViewModel() {
         val ws = _weatherState.value
         val remaining = ws.turnsRemaining - 1
         if (remaining <= 0) {
-            // Weather Shift
+            // Weather Shift to forecasted condition
             val conditions = WeatherCondition.values()
-            val nextCondition = conditions[Random.nextInt(conditions.size)]
-            val nextTurns = 12 + Random.nextInt(12)
+            val nextCondition = ws.forecast
+            val newForecast = conditions[Random.nextInt(conditions.size)]
+            val nextTurns = 12 + Random.nextInt(15)
             
             _weatherState.update {
                 it.copy(
                     condition = nextCondition,
-                    turnsRemaining = nextTurns
+                    turnsRemaining = nextTurns,
+                    forecast = newForecast,
+                    description = nextCondition.description
                 )
             }
-            updateWeatherDescription()
-            log("WEATHER_SHIFT // Grid environment changed to: ${nextCondition.name}")
+            log("WEATHER_SHIFT // Grid environment changed to: ${nextCondition.displayName}")
+            log("FORECAST // Predictive sensor reports next shift: ${newForecast.displayName}")
         } else {
             _weatherState.update { it.copy(turnsRemaining = remaining) }
         }
@@ -227,28 +246,32 @@ class GameViewModel : ViewModel() {
 
     private fun updateWeatherDescription() {
         val cond = _weatherState.value.condition
-        val zone = _worldState.value.zone
-        val desc = when (cond) {
-            WeatherCondition.CLEAR -> "GRID CORES ACTIVE // INTERFACE SIGNALS NOMINAL"
-            WeatherCondition.DATA_DRIFT -> "DATA DRIFT PRESENT // DETECTING FLUID MEMORY VORTICES"
-            WeatherCondition.GLITCH_RAIN -> "GLITCH RAIN DETECTED // VISUAL TERMINAL NOISE HIGH"
-            WeatherCondition.DATA_STORM -> {
-                if (zone == ZoneType.CITY) {
-                    "WARNING: HIGH RADIATION DATA STORM TEARING NEON STREETS // MOVEMENT IMPEDANCE ACTIVE"
-                } else {
-                    "DATA STORM OVERHEAD // ATMOSPHERIC COUPLING SHELTERED BY INNER CEILING"
-                }
-            }
+        _weatherState.update { it.copy(description = cond.description) }
+    }
+
+    // Toggle Cyberware Optics
+    fun toggleNightVision() {
+        _playerStats.update {
+            val next = !it.isNightVisionActive
+            log("CYBERWARE // Night Vision mode ${if (next) "ACTIVATED" else "DEACTIVATED"}")
+            it.copy(isNightVisionActive = next)
         }
-        _weatherState.update { it.copy(description = desc) }
+    }
+
+    fun toggleThermalOptics() {
+        _playerStats.update {
+            val next = !it.isThermalActive
+            log("CYBERWARE // Thermal Optics scanner ${if (next) "ONLINE" else "OFFLINE"}")
+            it.copy(isThermalActive = next)
+        }
     }
 
     private fun applyTurnWeatherEffects() {
         val ws = _weatherState.value
         val zone = _worldState.value.zone
 
-        // Only DATA_STORM inside the CITY zone triggers movement hazards
-        if (ws.condition == WeatherCondition.DATA_STORM && zone == ZoneType.CITY) {
+        // STORM or GLITCH_RAIN inside the CITY zone triggers movement hazards
+        if ((ws.condition == WeatherCondition.STORM || ws.condition == WeatherCondition.GLITCH_RAIN) && zone == ZoneType.CITY) {
             if (Random.nextFloat() < 0.30f) {
                 // Hazard Triggered!
                 val hazardDmg = 8
@@ -272,7 +295,7 @@ class GameViewModel : ViewModel() {
         }
     }
 
-    // --- Loot Collection ---
+    // --- Loot & Object Collection ---
     private fun collectLoot(lootType: LootType, coord: Pair<Int, Int>) {
         _worldState.update {
             val mutableLoot = it.loot.toMutableMap()
@@ -301,6 +324,31 @@ class GameViewModel : ViewModel() {
             LootType.KEYCARD -> {
                 _playerStats.update { it.copy(keycards = it.keycards + 1) }
                 log("SECURITY_PASS // Acquired 1 Physical Gateway Override Keycard.")
+            }
+            LootType.TERMINAL -> {
+                val amt = 75 + Random.nextInt(50)
+                _playerStats.update { it.copy(credits = it.credits + amt, hackingSkill = it.hackingSkill + 2) }
+                log("TERMINAL // Hacked mainframe terminal. Gained $amt Credits & +2 Cyber-Hacking skill!")
+            }
+            LootType.COMPUTER -> {
+                _playerStats.update { it.copy(hackingSkill = it.hackingSkill + 3) }
+                log("WORKSTATION // Extracted encryption keys. Cyber-Hacking skill +3!")
+            }
+            LootType.CAMERA -> {
+                val ws = _worldState.value
+                val newExplored = ws.explored.toMutableSet()
+                GameEngine.revealArea(coord.first, coord.second, newExplored, ws.width, ws.height)
+                _worldState.update { it.copy(explored = newExplored) }
+                log("SEC_CAM // Hacked security feeds! Area mapped.")
+            }
+            LootType.DATA_STORE -> {
+                val amt = 100 + Random.nextInt(100)
+                _playerStats.update { it.copy(credits = it.credits + amt) }
+                log("DATA_CORE // Downloaded classified corporate vault data. Gained $amt Credits!")
+            }
+            LootType.HEALING_STATION -> {
+                _playerStats.update { it.copy(hp = it.maxHp, shield = it.maxShield) }
+                log("MEDBAY_STATION // Activated nanite regen pod. Full HP and Shield restored!")
             }
         }
     }
